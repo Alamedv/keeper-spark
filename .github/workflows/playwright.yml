@@ -1,0 +1,59 @@
+name: Playwright Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+
+    env:
+      SUPABASE_TOKEN: ${{ secrets.SUPABASE_TOKEN }}
+      SUPABASE_BEARER_TOKEN: ${{ secrets.SUPABASE_BEARER_TOKEN }}
+      SUPABASE_DELETE_USERS_URL: ${{ secrets.SUPABASE_DELETE_USERS_URL }}
+      VITE_API_TOKEN: ${{ secrets.VITE_API_TOKEN }}
+      JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Cache node modules
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+
+      - name: Run Playwright tests
+        run: npx playwright test
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30
+
+      - name: Comment on Jira Issue
+        run: |
+          curl -D- -u ${{ secrets.JIRA_USERNAME }}:${{ secrets.JIRA_API_TOKEN }} \
+          -X POST --data '{"body": "Playwright tests completed successfully. See details: ${{ github.run_url }}"}' \
+          -H "Content-Type: application/json" \
+          https://your-domain.atlassian.net/rest/api/2/issue/${{ secrets.JIRA_ISSUE_KEY }}/comment
+        if: ${{ success() }}
